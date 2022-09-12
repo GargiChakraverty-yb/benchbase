@@ -1,0 +1,134 @@
+1.LoadOnceImplemented
+2.LoadRulesImplemented
+if (LoadOnceImplemented) {
+   // num of load threads should be 1.
+   // no need for before and after load as only one thread.
+   // countdownlatches helps in syncing between threads
+   // Should user be allowed to use before and after Load?
+   }
+else if(loadRulesImplemented){
+   // number of load threads is equal to the number of tables i.e load rules
+   //here we will need before and after Load since for foreign key dependency and countdown latches
+
+}
+
+
+--------------------------------
+
+
+1.ExecuteOnceImplemented
+2.ExecuteRulesImplemented
+3.transactions
+if (executeOnceImplemented) {
+   // num of execute threads should be 1.
+   // start time
+   // ybm.executeOnce(conn, workloadYAML)
+   // end time
+   // Log latency commands. Put them in a csv as well.
+   // System.exit(1)
+   // How much of the framework are we using here?
+} else if (transactionSpecified) {
+   // weight of the transaction specified in YAML?
+   //repeatedly called so weight =100 ?
+   ybm.transaction(conn);
+}
+else {
+   currentRandom = random(1, 100);
+   executeRule = getExecuteRule(currentRandom);
+   executeRulePreparedStmt = executeRule.prepareStatement;
+   bindParameters(executeRulePreparedStmt, executeRule);
+   executeRulePreparedStmt.executeQuery();
+}
+
+--------------------------------------------------------------
+For loader we can make api's similar to procedure api with our changes.
+
+
+ public final PreparedStatement getPreparedStatement(Connection conn, SQLStmt stmt, Object... params) throws SQLException {
+        PreparedStatement pStmt = this.getPreparedStatementReturnKeys(conn, stmt, null);
+        for (int i = 0; i < params.length; i++) {
+            pStmt.setObject(i + 1, params[i]);
+        }
+        return (pStmt);
+    }
+
+------------------------------------------------------------------------------------
+
+
+ public final PreparedStatement getPreparedStatementReturnKeys(Connection conn, SQLStmt stmt, int[] is) throws SQLException {
+
+        PreparedStatement pStmt = null;
+
+        // HACK: If the target system is Postgres, wrap the PreparedStatement in a special
+        //       one that fakes the getGeneratedKeys().
+        if (is != null && (this.dbType == DatabaseType.POSTGRES || this.dbType == DatabaseType.COCKROACHDB || this.dbType==DatabaseType.YUGABYTE)) {
+            pStmt = new AutoIncrementPreparedStatement(this.dbType, conn.prepareStatement(stmt.getSQL()));
+        }
+        // Everyone else can use the regular getGeneratedKeys() method
+        else if (is != null) {
+            pStmt = conn.prepareStatement(stmt.getSQL(), is);
+        }
+        // They don't care about keys
+        else {
+            pStmt = conn.prepareStatement(stmt.getSQL());
+        }
+        return (pStmt);
+    }
+
+
+
+------------------------------------------------------------------------------
+
+public abstract class YBMicroBenchmark {
+// fields: config which will be passed down on instance creation
+public HierarchicalConfiguration<ImmutableNode> config;
+//  Called once by the framework.
+// Use conn to execute the DDLs - table creation, index creation, constraints etc.
+abstract void create(Connection conn);
+
+// Called once by the framework to do the cleanup.
+// Use conn to drop tables/indexes etc
+abstract void cleanUp(Connection conn);
+
+
+// Framework shifts the responsibility of doing the load to the implementer
+// Called once.
+// Up to the implementer how many records and in which table should be inserted.
+// Implementer should ensure that the function does not use any global state
+void loadOnce(Connection conn){};
+
+// Framework shifts the responsibility of doing the execute to the implementer
+// Called once.
+// Framework assumes the call as one transaction and will report its latency
+// Needed to implement the benchmark for COPY command
+// User has to implement either transaction or executeOnce or executeRules
+void executeOnce(Connection conn);
+
+// Implement the actual transaction on your own.
+// User has to implement either transaction or executeOnce or executeRules
+void transaction(Connection conn);
+
+// Called once by the framework before load phase.
+// Provides rules to define the load phase. Explained in one of the next sections
+abstract ArrayList<LoadRule> loadRules();
+
+// Called once by the framework before the execute phase.
+// Provides rules to define the execute phase. Explained in one of the next sections.
+// User has to implement either transaction or executeOnce or executeRules
+abstract ArrayList<ExecuteRule> executeRules();
+
+// This function is called once after the load finishes.
+// Can be used to add foreign key checks which cannot be added in the create.
+// Right now, foreign key constraints cannot be added in the load phase as we dont have defined
+// the dependencies between the tables.
+void afterLoad(Connection conn);
+
+}
+
+
+
+
+
+
+
+
